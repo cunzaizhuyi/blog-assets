@@ -1,0 +1,146 @@
+<html lang="en">
+    <head>
+        <title>Ammo.js and three.js demo</title>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+        <style>
+	        div#canvas3d{
+		        border: none;
+		        cursor: move;
+		        width: 100%;
+		        height: 600px;
+		        background-color: #EEEEEE;
+	        }
+        </style>
+    </head>
+    <body>
+		<div id="info"></div>
+        <div id="canvas3d"></div>
+		<script src="../../builds/ammo.js"></script>
+        <script src="../js/three/three.min.js"></script>
+        <script>
+
+			Ammo().then(function(Ammo) {
+				
+				//开启Three.js渲染器
+				var renderer;//声明全局变量（对象）
+				function initThree() {
+					width = document.getElementById('canvas3d').clientWidth;//获取画布「canvas3d」的宽
+					height = document.getElementById('canvas3d').clientHeight;//获取画布「canvas3d」的高
+					renderer=new THREE.WebGLRenderer({antialias:true});//生成渲染器对象（属性：抗锯齿效果为设置有效）
+					renderer.setSize(width, height );//指定渲染器的高宽（和画布框大小一致）
+					document.getElementById('canvas3d').appendChild(renderer.domElement);//追加 【canvas】 元素到 【canvas3d】 元素中。
+					renderer.setClearColor(0xFFFFFF, 1.0);//设置canvas背景色(clearColor)
+				}
+				//设置相机
+				var camera;
+				function initCamera() {
+					camera = new THREE.PerspectiveCamera( 45, width / height , 1 , 5000 );//设置透视投影的相机,默认情况下相机的上方向为Y轴，右方向为X轴，沿着Z轴朝里（视野角：fov 纵横比：aspect 相机离视体积最近的距离：near 相机离视体积最远的距离：far）
+					camera.position.x = 0;//设置相机的位置坐标
+					camera.position.y = 50;//设置相机的位置坐标
+					camera.position.z = 100;//设置相机的位置坐标
+					camera.up.x = 0;//设置相机的上为「x」轴方向
+					camera.up.y = 1;//设置相机的上为「y」轴方向
+					camera.up.z = 0;//设置相机的上为「z」轴方向
+					camera.lookAt( {x:0, y:0, z:0 } );//设置视野的中心坐标
+				}
+				//设置场景
+				var scene;
+				function initScene() {
+					scene = new THREE.Scene();
+				}
+				
+				//设置光源
+				var light;
+				function initLight() {
+					light = new THREE.DirectionalLight(0xff0000, 1.0, 0);//设置平行光源
+					light.position.set( 200, 200, 200 );//设置光源向量
+					scene.add(light);// 追加光源到场景
+				}
+				//设置物体
+				//var sphere;
+				function initObject(x,y,z,color){
+					var sphere = new THREE.Mesh(
+						new THREE.SphereGeometry(15,15,15),                //width,height,depth
+						new THREE.MeshPhongMaterial(color) //材质设定
+					);
+					scene.add(sphere);
+					sphere.position.set(x,y,z);
+					return sphere;
+				}
+				
+				//设置地面
+				var textureLoader = new THREE.TextureLoader();
+				function groundReady(callback) {
+					textureLoader.load("../textures/grid.png",function (texture) {
+						texture.wrapS = THREE.RepeatWrapping;
+						texture.wrapT = THREE.RepeatWrapping;
+						texture.repeat.set( 20, 20 );
+						var mat = new THREE.MeshBasicMaterial();
+						mat.map = texture;
+						var cubeGeometry = new THREE.BoxGeometry(300,1,300,1,1,1);
+						var cube = new THREE.Mesh(cubeGeometry, mat);
+						cube.position.set(0,-20,20);
+						scene.add(cube);
+						callback();
+					});
+					
+				}
+				//执行
+				function threeStart() {
+					initThree();
+					initCamera();
+					initScene();
+					initLight();
+					initObject(-80,0,0,{color : 0xFF0000});
+					groundReady(function () {
+						var ball = initObject(0, 0, 0, {color: 0xc3f513});
+						//创建刚体动力学物体
+						function createBox() {
+							//创建小球并且赋予刚体属性，如运动状态，惯性等
+							var geometry = new Ammo.btBoxShape(new Ammo.btVector3(0, 0, 0));
+							var transform = new Ammo.btTransform();
+							transform.setIdentity();
+							transform.setOrigin(new Ammo.btVector3(100, 0, 0));
+							var motionState = new Ammo.btDefaultMotionState(transform);
+							var localInertia = new Ammo.btVector3(0, 0, 0);
+							geometry.calculateLocalInertia(5, localInertia);
+							var rbInfo = new Ammo.btRigidBodyConstructionInfo(5, motionState, geometry, localInertia);
+							var body = new Ammo.btRigidBody(rbInfo);
+							//创造刚体动力学环境，如碰撞环境、重力环境等
+							(function initPhysics() {
+								// Physics configuration
+								collisionConfiguration = new Ammo.btDefaultCollisionConfiguration();
+								dispatcher = new Ammo.btCollisionDispatcher(collisionConfiguration);
+								broadphase = new Ammo.btDbvtBroadphase();
+								solver = new Ammo.btSequentialImpulseConstraintSolver();
+								physicsWorld = new Ammo.btDiscreteDynamicsWorld(dispatcher, broadphase, solver, collisionConfiguration);
+								physicsWorld.setGravity(new Ammo.btVector3(0, -9.82, 0));
+							})();
+							//添加刚体动力学球体到刚体环境
+							physicsWorld.addRigidBody(body);
+							//取球体的系列参数，比如平移量，旋转速度向量等。
+							var ms = body.getMotionState();
+							if (ms) {
+								var TRANSFORM_AUX = new Ammo.btTransform();
+								ms.getWorldTransform(TRANSFORM_AUX);
+								var p = TRANSFORM_AUX.getOrigin();
+								var q = TRANSFORM_AUX.getRotation();
+								//把球体的系列参数附加给threejs创建的球体ball
+								ball.position.set(p.x(), p.y(), p.z());
+							}
+							renderer.clear();
+							renderer.render(scene, camera);
+						};
+						setTimeout(createBox,1000);
+						renderer.clear();
+						renderer.render(scene, camera);
+					});
+				}
+				threeStart();
+			});
+			
+        </script>
+
+    </body>
+</html>
